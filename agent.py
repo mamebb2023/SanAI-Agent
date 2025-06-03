@@ -1,11 +1,21 @@
 import asyncio
 import logging
-from dotenv import load_dotenv
+import base64
+import asyncio
 from typing import Any
+from dotenv import load_dotenv
 from livekit import rtc
-from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli, llm
+from livekit.agents import (
+    AutoSubscribe,
+    JobContext,
+    WorkerOptions,
+    cli,
+    llm,
+    get_job_context,
+)
 from livekit.agents.voice_assistant import VoiceAssistant
 from livekit.plugins import deepgram, openai, silero
+from livekit.agents.llm import ImageContent
 
 load_dotenv()
 
@@ -16,72 +26,40 @@ logger = logging.getLogger("livekit-agent")
 
 
 class AssistantFnc(llm.FunctionContext):
-    def __init__(self, chat_ctx: Any) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.room: Any = None
-        self.latest_video_frame: Any = None
-        self.chat_ctx: Any = chat_ctx
+        self._tasks = []
 
-    async def process_video_stream(self, track):
-        """Process video stream and store the first video frame."""
-        logger.info(f"Starting to process video track: {track.sid}")
-        video_stream = rtc.VideoStream(track)
-        try:
-            async for frame_event in video_stream:
-                self.latest_video_frame = frame_event.frame
-                logger.info(f"Received a frame from track {track.sid}")
-                break  # Process only the first frame
-        except Exception as e:
-            logger.error(f"Error processing video stream: {e}")
+    async def on_enter(self):
+        def _image_received_handler(reader, participant_identity):
+            task = asyncio.create_task(
+                self._image_received(reader, participant_identity)
+            )
+            self._tasks.append(task)
+            task.add_done_callback(lambda t: self._tasks.remove(t))
 
-    @llm.ai_callable()
-    async def capture_and_add_image(self) -> str:
-        """Capture an image from the video stream and add it to the chat context."""
-        if self.chat_ctx is None:
-            logger.error("chat_ctx is not set")
-            return "Error: chat_ctx is not set"
+        # Add the handler when the agent joins
+        get_job_context().room.register_byte_stream_handler(
+            "images", _image_received_handler
+        )
 
-        video_publication = self._get_video_publication()
-        if not video_publication:
-            logger.info("No video track available")
-            return "No video track available"
+    async def _image_received(self, reader, participant_identity):
+        image_bytes = bytes()
+        async for chunk in reader:
+            image_bytes += chunk
 
-        try:
-            await self._subscribe_and_capture_frame(video_publication)
-            if not self.latest_video_frame:
-                logger.info("No video frame available")
-                return "No video frame available"
+        chat_ctx = self.chat_ctx.copy()
 
-            chat_image = llm.ChatImage(image=self.latest_video_frame)
-            self.chat_ctx.append(images=[chat_image], role="user")
-            return f"Image captured and added to context. Dimensions: {self.latest_video_frame.width}x{self.latest_video_frame.height}"
-        except Exception as e:
-            logger.error(f"Error in capture_and_add_image: {e}")
-            return f"Error: {e}"
-        finally:
-            self._unsubscribe_from_video(video_publication)
-            self.latest_video_frame = None
-
-    def _get_video_publication(self):
-        """Retrieve the first available video publication."""
-        for participant in self.room.remote_participants.values():
-            for publication in participant.track_publications.values():
-                if publication.kind == rtc.TrackKind.KIND_VIDEO:
-                    return publication
-        return None
-
-    async def _subscribe_and_capture_frame(self, publication):
-        """Subscribe to the video publication and wait for a frame to be processed."""
-        publication.set_subscribed(True)
-        for _ in range(10):  # Wait up to 5 seconds
-            if self.latest_video_frame:
-                break
-            await asyncio.sleep(0.5)
-
-    def _unsubscribe_from_video(self, publication):
-        """Unsubscribe from the video publication."""
-        if publication:
-            publication.set_subscribed(False)
+        # Encode the image to base64 and add it to the chat context
+        chat_ctx.add_message(
+            role="user",
+            content=[
+                ImageContent(
+                    image=f"data:image/png;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+                )
+            ],
+        )
+        await self.update_chat_ctx(chat_ctx)
 
 
 async def entrypoint(ctx: JobContext):
