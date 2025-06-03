@@ -123,7 +123,6 @@ async def entrypoint(ctx: agents.JobContext):
         room=ctx.room,
         agent=Assistant(),
         room_input_options=RoomInputOptions(
-            video_enabled=True,
             noise_cancellation=noise_cancellation.BVC(),
         ),
     )
