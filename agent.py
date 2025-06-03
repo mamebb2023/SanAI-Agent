@@ -12,6 +12,10 @@ from livekit.plugins import (
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.agents.llm import ImageContent
 
+import os
+import random
+import imghdr
+
 load_dotenv()
 
 
@@ -92,21 +96,34 @@ class Assistant(Agent):
         async for chunk in reader:
             image_bytes += chunk
 
-        chat_ctx = self.chat_ctx.copy()
+        # 1. Detect the file type
+        image_type = imghdr.what(None, h=image_bytes)
+        if image_type not in {"jpeg", "png"}:
+            await self.session.say("Sorry, I can only process PNG or JPEG images.")
+            return
 
-        # Add the image to the context
+        # 2. Generate a random filename
+        os.makedirs("images", exist_ok=True)
+        file_path = f"images/image-{random.randint(1000, 9999)}.{image_type}"
+
+        # 3. Save the image
+        with open(file_path, "wb") as f:
+            f.write(image_bytes)
+
+        # 4. Add image to context
+        chat_ctx = self.chat_ctx.copy()
         chat_ctx.add_message(
             role="user",
             content=[
                 ImageContent(
-                    image=f"data:image/png;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+                    image=f"data:image/{image_type};base64,{base64.b64encode(image_bytes).decode('utf-8')}"
                 )
             ],
         )
 
         await self.update_chat_ctx(chat_ctx)
         await self.session.say(
-            "I see you've uploaded an image. What do you want me to do with it?"
+            "I see you've uploaded an image. What do you want me to look at?"
         )
 
 
