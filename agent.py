@@ -94,7 +94,7 @@ class Assistant(Agent):
 
         chat_ctx = self.chat_ctx.copy()
 
-        # Encode the image to base64 and add it to the chat context
+        # Add the image to the context
         chat_ctx.add_message(
             role="user",
             content=[
@@ -103,7 +103,11 @@ class Assistant(Agent):
                 )
             ],
         )
+
         await self.update_chat_ctx(chat_ctx)
+
+        await self.say("I see you've uploaded an image. Let me take a look.")
+        await self.generate_reply()
 
 
 async def entrypoint(ctx: agents.JobContext):
@@ -127,7 +131,7 @@ async def entrypoint(ctx: agents.JobContext):
     await ctx.connect()
 
     await session.generate_reply(
-        instructions="Introduce yourself and ask the user how are they feeling today."
+        instructions="Introduce yourself and ask the user how are they feeling today and wait for the response."
     )
 
 
