@@ -105,9 +105,9 @@ class Assistant(Agent):
         )
 
         await self.update_chat_ctx(chat_ctx)
-
-        await self.say("I see you've uploaded an image. Let me take a look.")
-        await self.generate_reply()
+        await self.session.say(
+            "I see you've uploaded an image. What do you want me to do with it?"
+        )
 
 
 async def entrypoint(ctx: agents.JobContext):
