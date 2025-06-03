@@ -1,34 +1,24 @@
 import asyncio
-import logging
 import base64
-import asyncio
-from typing import Any
 from dotenv import load_dotenv
-from livekit import rtc
-from livekit.agents import (
-    AutoSubscribe,
-    JobContext,
-    WorkerOptions,
-    cli,
-    llm,
-    get_job_context,
+from livekit import agents, rtc
+from livekit.agents import AgentSession, Agent, RoomInputOptions, get_job_context
+from livekit.plugins import (
+    openai,
+    deepgram,
+    noise_cancellation,
+    silero,
 )
-from livekit.agents.voice_assistant import VoiceAssistant
-from livekit.plugins import deepgram, openai, silero
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.agents.llm import ImageContent
 
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger("livekit-agent")
 
-
-class AssistantFnc(llm.FunctionContext):
+class Assistant(Agent):
     def __init__(self) -> None:
-        super().__init__()
-        self._tasks = []
+        self._tasks = []  # Prevent garbage collection of running tasks
+        super().__init__(instructions="You are a helpful voice AI assistant.")
 
     async def on_enter(self):
         def _image_received_handler(reader, participant_identity):
@@ -62,48 +52,30 @@ class AssistantFnc(llm.FunctionContext):
         await self.update_chat_ctx(chat_ctx)
 
 
-async def entrypoint(ctx: JobContext):
-    """Main entry point for the voice assistant job."""
-    try:
-        await ctx.connect(auto_subscribe=AutoSubscribe.SUBSCRIBE_NONE)
-        initial_ctx = llm.ChatContext().append(
-            role="system",
-            text=(
-                "You are a voice assistant created by LiveKit. Your interface with users will be voice. "
-                "You should use short and concise responses. If the user asks you to use their camera, use the capture_and_add_image function."
-            ),
-        )
-        fnc_ctx = AssistantFnc(chat_ctx=initial_ctx)
-        fnc_ctx.room = ctx.room
+async def entrypoint(ctx: agents.JobContext):
+    session = AgentSession(
+        stt=deepgram.STT(model="nova-3", language="multi"),
+        llm=openai.LLM(model="gpt-4o-mini"),
+        tts=openai.TTS(),
+        vad=silero.VAD.load(),
+        turn_detection=MultilingualModel(),
+    )
 
-        @ctx.room.on("track_subscribed")
-        def on_track_subscribed(
-            track: rtc.Track,
-            publication: rtc.RemoteTrackPublication,
-            participant: rtc.RemoteParticipant,
-        ):
-            if track.kind == rtc.TrackKind.KIND_VIDEO:
-                asyncio.create_task(fnc_ctx.process_video_stream(track))
+    await session.start(
+        room=ctx.room,
+        agent=Assistant(),
+        room_input_options=RoomInputOptions(
+            video_enabled=True,
+            noise_cancellation=noise_cancellation.BVC(),
+        ),
+    )
 
-        assistant = VoiceAssistant(
-            vad=silero.VAD.load(),
-            stt=deepgram.STT(),
-            llm=openai.LLM(model="gpt-4o"),
-            tts=openai.TTS(),
-            chat_ctx=initial_ctx,
-            fnc_ctx=fnc_ctx,
-        )
+    await ctx.connect()
 
-        assistant.start(ctx.room)
-        await asyncio.sleep(1)
-        await assistant.say("Hey, how can I help you today?", allow_interruptions=True)
-
-        while True:
-            await asyncio.sleep(10)
-
-    except Exception as e:
-        logger.error(f"An error occurred: {e}", exc_info=True)
+    await session.generate_reply(
+        instructions="Greet the user and offer your assistance."
+    )
 
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
