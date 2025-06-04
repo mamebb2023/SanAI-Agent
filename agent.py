@@ -123,7 +123,7 @@ class Assistant(Agent):
 
         await self.update_chat_ctx(chat_ctx)
         await self.session.say("I see you've uploaded an image. Let me see.")
-        await self.session.generate_replay()
+        await self.session.generate_reply()
 
 
 async def entrypoint(ctx: agents.JobContext):
