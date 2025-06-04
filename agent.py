@@ -104,7 +104,7 @@ class Assistant(Agent):
 
         # 2. Generate a random filename
         os.makedirs("images", exist_ok=True)
-        file_path = f"images/image-{random.randint(1000, 9999)}.{image_type}"
+        file_path = f"images/image-{random.randint(1000, 99999)}.{image_type}"
 
         # 3. Save the image
         with open(file_path, "wb") as f:
@@ -122,9 +122,8 @@ class Assistant(Agent):
         )
 
         await self.update_chat_ctx(chat_ctx)
-        await self.session.say(
-            "I see you've uploaded an image. What do you want me to look at?"
-        )
+        await self.session.say("I see you've uploaded an image. Let me see.")
+        await self.session.generate_replay()
 
 
 async def entrypoint(ctx: agents.JobContext):
