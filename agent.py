@@ -14,7 +14,8 @@ from livekit.agents.llm import ImageContent
 
 import os
 import random
-import imghdr
+from io import BytesIO
+from PIL import Image
 
 load_dotenv()
 
@@ -96,19 +97,40 @@ class Assistant(Agent):
         async for chunk in reader:
             image_bytes += chunk
 
-        # 1. Detect the file type
-        image_type = imghdr.what(None, h=image_bytes)
-        if image_type not in {"jpeg", "png"}:
-            await self.session.say("Sorry, I can only process PNG or JPEG images.")
+        # 1. Detect the file type using Pillow
+        try:
+            img = Image.open(BytesIO(image_bytes))
+            image_type = img.format.lower()  # returns 'jpeg', 'png', etc.
+
+            if image_type not in {"jpeg", "png", "jpg", "webp"}:
+                await self.session.say(
+                    "Sorry, I can only process JPEG, PNG, or WebP images."
+                )
+                return
+
+            # Convert to standard format names
+            if image_type == "jpg":
+                image_type = "jpeg"
+
+        except Exception as e:
+            await self.session.say(
+                "Sorry, I couldn't process that image. Please try with a different image format."
+            )
             return
 
         # 2. Generate a random filename
-        os.makedirs("images", exist_ok=True)
-        file_path = f"images/image-{random.randint(1000, 99999)}.{image_type}"
+        image_dir = os.path.join(os.getcwd(), "images")
+        os.makedirs(image_dir, exist_ok=True)
+        file_path = os.path.join(
+            image_dir, f"image-{random.randint(1000, 99999)}.{image_type}"
+        )
 
-        # 3. Save the image
-        with open(file_path, "wb") as f:
-            f.write(image_bytes)
+        # 3. Save the image using Pillow (better handling)
+        try:
+            img.save(file_path, format=image_type.upper())
+        except Exception as e:
+
+            return
 
         # 4. Add image to context
         chat_ctx = self.chat_ctx.copy()
