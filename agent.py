@@ -104,7 +104,7 @@ class Assistant(Agent):
 
             if image_type not in {"jpeg", "png", "jpg", "webp"}:
                 await self.session.say(
-                    "Sorry, I can only process JPEG, PNG, or WebP images."
+                    "Sorry, I can only process JPG, PNG, or WebP images."
                 )
                 return
 
@@ -118,19 +118,18 @@ class Assistant(Agent):
             )
             return
 
-        # 2. Generate a random filename
-        image_dir = os.path.join(os.getcwd(), "images")
-        os.makedirs(image_dir, exist_ok=True)
-        file_path = os.path.join(
-            image_dir, f"image-{random.randint(1000, 99999)}.{image_type}"
-        )
+        # # 2. Generate a random filename
+        # image_dir = os.path.join(os.getcwd(), "images")
+        # os.makedirs(image_dir, exist_ok=True)
+        # file_path = os.path.join(
+        #     image_dir, f"image-{random.randint(1000, 99999)}.{image_type}"
+        # )
 
-        # 3. Save the image using Pillow (better handling)
-        try:
-            img.save(file_path, format=image_type.upper())
-        except Exception as e:
-
-            return
+        # # 3. Save the image using Pillow (better handling)
+        # try:
+        #     img.save(file_path, format=image_type.upper())
+        # except Exception as e:
+        #     return
 
         # 4. Add image to context
         chat_ctx = self.chat_ctx.copy()
